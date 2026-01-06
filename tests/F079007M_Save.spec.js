@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-test('Login to EFormTOM XF079007M', async ({ page }) => {
+test('F079007M_Save', async ({ page }) => {
     // 1. Go to the specific URL
     const targetUrl = 'https://ap02.domino.com.tw/FCB/EFormTOM.nsf/XF079007M.xsp';
     await page.goto(targetUrl);
@@ -137,6 +137,216 @@ test('Login to EFormTOM XF079007M', async ({ page }) => {
         console.log('Found "寫入會簽資訊" button. Clicking...');
         await writeInfoBtn.click();
         await page.waitForTimeout(1000);
+    }
+
+    // 6.5 Highlight Specific Buttons before Save
+    // 6.5 Handle Complex Dialog Selections (Red, Orange, Yellow, Green)
+    console.log('--- Starting Complex Dialog Interactions ---');
+
+    const selectionTasks = [
+        {
+            name: 'Red Task (數位銀行處)',
+            suffix: ':CounterSignBtn_L3',
+            category: '24.資訊管理中心',
+            target: '數位銀行處'
+        },
+        {
+            name: 'Orange Task (系統整合部)',
+            suffix: ':CounterSignBtn_L4',
+            category: null, // Auto-selected
+            target: '系統整合部'
+        },
+        {
+            name: 'Yellow Task (數位安全處)',
+            suffix: ':CT2CounterSignBtn_L3',
+            category: '24.資訊管理中心',
+            target: '數位安全處'
+        },
+        {
+            name: 'Green Task (應用開發一部)',
+            suffix: ':CT2CounterSignBtn_L4',
+            category: null, // Auto-selected
+            target: '應用開發一部'
+        }
+    ];
+
+    // Set longer timeout for this specific test due to multiple dialog interactions
+    test.setTimeout(60000);
+
+    // Helper function for the entire dialog flow
+    const handleComplexDialog = async (task) => {
+        console.log(`\n=== Starting Task: ${task.name} ===`);
+
+        // 1. Find and Click Button (Slowly)
+        const btnSelector = `[id$="${task.suffix}"]`;
+        let btn = page.locator(btnSelector).first();
+
+        // Search frames if not on main page
+        if (!await btn.isVisible()) {
+            for (const frame of page.frames()) {
+                const fb = frame.locator(btnSelector).first();
+                if (await fb.isVisible()) {
+                    btn = fb;
+                    break;
+                }
+            }
+        }
+
+        if (!await btn.isVisible()) {
+            console.error(`CRITICAL: Button for ${task.name} not found!`);
+            return;
+        }
+
+        // Visual Highlight + Slow Click
+        await btn.scrollIntoViewIfNeeded();
+        await btn.evaluate(el => el.style.border = '3px solid blue');
+        await page.waitForTimeout(1000); // 1s delay before open
+        await btn.click();
+        console.log('Dialog Button Clicked. Waiting 0.5s for dialog content...');
+        await page.waitForTimeout(500);
+
+        // 2. Interact inside Dialog
+        // We need to find the "Category" ListBox and "Target" ListBox
+        // Dialog might be in the same context or a new iframe. We scan all.
+
+        let categoryFound = false;
+
+        // Function to select category
+        const selectCategory = async (ctx) => {
+            const selects = ctx.locator('select:visible');
+            const count = await selects.count();
+            for (let i = 0; i < count; i++) {
+                const s = selects.nth(i);
+                // Check options
+                const opts = await s.locator('option').allInnerTexts();
+                const matched = opts.find(o => o.includes(task.category));
+
+                // If found, ensure it is selected
+                if (matched) {
+                    console.log(`  [Select Category] Found '${matched}' in listbox.`);
+                    await s.scrollIntoViewIfNeeded();
+                    await page.waitForTimeout(500); // Slow scroll
+                    await s.selectOption({ label: matched });
+                    await page.waitForTimeout(2000); // Wait for right side to update
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (task.category) {
+            // Try to find and select Category in all frames
+            if (await selectCategory(page)) categoryFound = true;
+            else {
+                for (const f of page.frames()) {
+                    if (await selectCategory(f)) {
+                        categoryFound = true;
+                        break;
+                    }
+                }
+            }
+            if (!categoryFound) console.log(`  [Info] Category '${task.category}' not found or auto-selected.`);
+        } else {
+            console.log('  [Info] Skipping Category selection (Auto-mode).');
+        }
+
+        console.log('  [Info] Waiting 1s before selecting target (due to slow dialog)...');
+        await page.waitForTimeout(1000);
+
+        // 3. Select Target (Double Click)
+        let targetSelected = false;
+
+        const selectTargetItem = async (ctx) => {
+            const selects = ctx.locator('select:visible');
+            const count = await selects.count();
+            for (let i = 0; i < count; i++) {
+                const s = selects.nth(i);
+                const opts = await s.locator('option').allInnerTexts();
+                // Find target
+                const matched = opts.find(o => o.includes(task.target));
+
+                if (matched) {
+                    console.log(`  [Select Target] Found '${matched}' in listbox.`);
+                    await s.scrollIntoViewIfNeeded();
+                    await page.waitForTimeout(500);
+
+                    // A. Select it
+                    await s.selectOption({ label: matched });
+                    await page.waitForTimeout(500);
+
+                    // B. Double Click (Try Element handle first)
+                    const opt = s.locator('option').filter({ hasText: matched }).first();
+                    if (await opt.isVisible()) {
+                        console.log('    Double-clicking option element...');
+                        await opt.dblclick({ force: true });
+                    } else {
+                        // Fallback: Dispatch event on select
+                        console.log('    Dispatching dblclick event on select...');
+                        await s.dispatchEvent('dblclick');
+                    }
+
+                    await page.waitForTimeout(1000);
+
+                    // C. Click "Add" button if exists (Legacy behavior)
+                    const addBtn = ctx.locator('button').filter({ hasText: '>' }).or(ctx.locator('button').filter({ hasText: '新增' })).first();
+                    if (await addBtn.isVisible()) {
+                        await addBtn.click();
+                        console.log('    Clicked [Add/>/新增] button.');
+                        await page.waitForTimeout(1000);
+                    }
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // Scan for target
+        if (await selectTargetItem(page)) targetSelected = true;
+        else {
+            for (const f of page.frames()) {
+                if (await selectTargetItem(f)) { targetSelected = true; break; }
+            }
+        }
+
+        if (!targetSelected) {
+            console.error(`  [ERROR] Target '${task.target}' NOT FOUND in any listbox.`);
+            await page.screenshot({ path: `screenshots/error_${task.name}.png`, fullPage: true });
+        }
+
+        // 4. Confirm / Close Dialog
+        console.log('  [Confirm] Finding OK button...');
+        // Common Confirm Selectors
+        const confirmFilter = { hasText: /^確定$/ };
+
+        let confirmClicked = false;
+
+        // Try global search (dialog often floats on top)
+        const globalConfirm = page.locator('button, input[type="button"], span').filter(confirmFilter);
+
+        if (await globalConfirm.count() > 0) {
+            // Iterate to find the visible one
+            const count = await globalConfirm.count();
+            for (let i = 0; i < count; i++) {
+                const btn = globalConfirm.nth(i);
+                if (await btn.isVisible()) {
+                    await btn.scrollIntoViewIfNeeded();
+                    await page.waitForTimeout(500);
+                    await btn.click();
+                    confirmClicked = true;
+                    console.log('  [Confirm] Button Clicked.');
+                    break;
+                }
+            }
+        }
+
+        if (!confirmClicked) console.error('  [Confirm] Button NOT FOUND or NOT CLICKABLE.');
+
+        await page.waitForTimeout(2000); // Wait for dialog close animation
+    };
+
+    // Execute All 4 Tasks Sequentially
+    for (const task of selectionTasks) {
+        await handleComplexDialog(task);
     }
 
     // 7. Submit / Save
