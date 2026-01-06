@@ -227,7 +227,7 @@ test('F079007M_Save', async ({ page }) => {
                     await s.scrollIntoViewIfNeeded();
                     await page.waitForTimeout(500); // Slow scroll
                     await s.selectOption({ label: matched });
-                    await page.waitForTimeout(2000); // Wait for right side to update
+                    await page.waitForTimeout(500); // Wait for right side to update
                     return true;
                 }
             }
@@ -353,8 +353,8 @@ test('F079007M_Save', async ({ page }) => {
     console.log('--- Submitting Form ---');
 
     // Capture state before save
-    await page.screenshot({ path: 'before_save.png' });
-    console.log('Screenshot saved: before_save.png');
+    //await page.screenshot({ path: 'before_save.png' });
+    //console.log('Screenshot saved: before_save.png');
 
     // Handle Dialogs (Alerts/Confirmations)
     page.on('dialog', async dialog => {
@@ -446,8 +446,8 @@ test('F079007M_Save', async ({ page }) => {
     }
 
     // Wait for operation to complete and capture result
-    await page.waitForTimeout(5000);
-    await page.screenshot({ path: 'after_save.png' });
-    console.log('Screenshot saved: after_save.png');
+    //await page.waitForTimeout(5000);
+    //await page.screenshot({ path: 'after_save.png' });
+    //console.log('Screenshot saved: after_save.png');
     console.log(`Final URL: ${page.url()}`);
 });
